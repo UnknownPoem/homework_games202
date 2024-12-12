@@ -123,12 +123,21 @@ namespace ProjEnv
             {
                 for (int x = 0; x < width; x++)
                 {
-                    // TODO: here you need to compute light sh of each face of cubemap of each pixel
-                    // TODO: 此处你需要计算每个像素下cubemap某个面的球谐系数
+                    // DONE: here you need to compute light sh of each face of cubemap of each pixel
+                    // DONE: 此处你需要计算每个像素下cubemap某个面的球谐系数
                     Eigen::Vector3f dir = cubemapDirs[i * width * height + y * width + x];
                     int index = (y * width + x) * channel;
                     Eigen::Array3f Le(images[i][index + 0], images[i][index + 1],
                                       images[i][index + 2]);
+
+                    auto delta_w = CalcArea(x, y, width, height);
+                    for (int l = 0; l <= SHOrder; ++l) {
+                        for (int m = -l; m <= l; ++m) {
+                            auto basic_sh_proj = sh::EvalSH(l, m,
+                                Eigen::Vector3d(dir.x(), dir.y(), dir.z()).normalized());
+                            SHCoeffiecents[sh::GetIndex(l, m)] += Le * basic_sh_proj * delta_w;
+                        }
+                    }
                 }
             }
         }
@@ -176,7 +185,6 @@ public:
 
     virtual void preprocess(const Scene *scene) override
     {
-
         // Here only compute one mesh
         const auto mesh = scene->getMeshes()[0];
         // Projection environment
@@ -206,23 +214,29 @@ public:
             auto shFunc = [&](double phi, double theta) -> double {
                 Eigen::Array3d d = sh::ToVector(phi, theta);
                 const auto wi = Vector3f(d.x(), d.y(), d.z());
+
+                double H = wi.normalized().dot(n.normalized());
                 if (m_Type == Type::Unshadowed)
                 {
-                    // TODO: here you need to calculate unshadowed transport term of a given direction
-                    // TODO: 此处你需要计算给定方向下的unshadowed传输项球谐函数值
-                    return 0;
+                    // DONE: here you need to calculate unshadowed transport term of a given direction
+                    // DONE: 此处你需要计算给定方向下的unshadowed传输项球谐函数值
+                    return H > 0.0 ? H : 0;
                 }
                 else
                 {
-                    // TODO: here you need to calculate shadowed transport term of a given direction
-                    // TODO: 此处你需要计算给定方向下的shadowed传输项球谐函数值
+                    // DONE: here you need to calculate shadowed transport term of a given direction
+                    // DONE: 此处你需要计算给定方向下的shadowed传输项球谐函数值
+                    if (H > 0.0 && !scene->rayIntersect(Ray3f(v, wi.normalized()))) {
+                        return H;
+                    }
                     return 0;
                 }
             };
             auto shCoeff = sh::ProjectFunction(SHOrder, shFunc, m_SampleCount);
             for (int j = 0; j < shCoeff->size(); j++)
             {
-                m_TransportSHCoeffs.col(i).coeffRef(j) = (*shCoeff)[j];
+                m_TransportSHCoeffs.col(i).coeffRef(j) = (*shCoeff)[j] / M_PI;
+                //m_TransportSHCoeffs.col(i).coeffRef(j) = (*shCoeff)[j];
             }
         }
         if (m_Type == Type::Interreflection)
